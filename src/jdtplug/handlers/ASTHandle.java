@@ -1,6 +1,7 @@
 package jdtplug.handlers;
 
 import java.util.HashSet;
+import java.util.Map;
 
 import org.eclipse.core.runtime.CoreException;
 import org.eclipse.core.runtime.NullProgressMonitor;
@@ -9,17 +10,32 @@ import org.eclipse.jdt.core.IJavaElement;
 import org.eclipse.jdt.core.IJavaProject;
 import org.eclipse.jdt.core.IMember;
 import org.eclipse.jdt.core.IMethod;
+import org.eclipse.jdt.core.JavaCore;
 import org.eclipse.jdt.core.JavaModelException;
+import org.eclipse.jdt.core.dom.AST;
 import org.eclipse.jdt.core.dom.ASTNode;
+import org.eclipse.jdt.core.dom.ASTParser;
 import org.eclipse.jdt.core.dom.CompilationUnit;
+import org.eclipse.jdt.core.dom.IAnnotationBinding;
+import org.eclipse.jdt.core.dom.IMethodBinding;
+import org.eclipse.jdt.core.dom.ITypeBinding;
+import org.eclipse.jdt.core.dom.MethodDeclaration;
+import org.eclipse.jdt.core.dom.NodeFinder;
 import org.eclipse.jdt.core.search.IJavaSearchScope;
 import org.eclipse.jdt.core.search.SearchEngine;
 import org.eclipse.jdt.internal.corext.callhierarchy.CallHierarchy;
 import org.eclipse.jdt.internal.corext.callhierarchy.MethodWrapper;
+import org.eclipse.jdt.internal.corext.refactoring.structure.ASTNodeSearchUtil;
+import org.eclipse.jdt.ui.SharedASTProvider;
 
 @SuppressWarnings("restriction")
 public class ASTHandle {
-	//private IPackageFragmentRoot packagesRoot;
+	private static final String MAP_KEY_COLUMN = "MapKeyColumn";
+	private static final String JOIN_COLUMN = "JoinColumn";
+	private static final String COLUMN = "Column";
+	private static final String ENTITY = "Entity";
+	private HashSet<String> dbConstant = new HashSet<String>();
+	
 	private IJavaProject javaProject;
 	/**
 	 * 构造函数
@@ -27,6 +43,10 @@ public class ASTHandle {
 	 */
 	public ASTHandle(IJavaProject javaProject){
 		this.javaProject = javaProject;
+		dbConstant.add(ENTITY);
+		dbConstant.add(COLUMN);
+		dbConstant.add(JOIN_COLUMN);
+		dbConstant.add(MAP_KEY_COLUMN);
 	}
 	/**
 	 * function : for statement node
@@ -164,12 +184,35 @@ public class ASTHandle {
 	}
 	
 	/**
-	 * 判断方法所在的类有没有entity字段
+	 * 判断方法所在的类有没有entity字段以及方法使用的变量有没有@colunm
 	 * @param IMethod
 	 * @return if exist @Entity return true, otherwise false
 	 */
+	public boolean DBMethod(IMethod iMethod){
+		//System.out.println("mthodname:\t"+iMethod.getElementName());
+		EntityVisitor entity = new EntityVisitor(dbConstant);
+		MethodDeclaration methodNode = convertToAstNode(iMethod);
+		if(methodNode == null)
+			return false;
+		IMethodBinding mBinding = methodNode.resolveBinding();
+		ITypeBinding typeBinding = mBinding.getDeclaringClass();
+		IAnnotationBinding[] annotationBindings = typeBinding.getAnnotations();
+		if(annotationBindings != null){
+			//System.out.println("annotationBindings");
+			for(IAnnotationBinding annotationBinding : annotationBindings){
+				//The class exist @Entity
+				if(dbConstant.contains(annotationBinding.getName())){
+					methodNode.accept(entity);
+					if(entity.getEntityExist() == true){
+						return true;
+					}
+				}
+			}
+		}
+		return false;
+	}
 	public boolean entityMethod(IMethod iMethod){
-		EntityVisitor entity = new EntityVisitor();
+		EntityVisitor entity = new EntityVisitor(dbConstant);
 		ICompilationUnit iCompilationUnit = iMethod.getCompilationUnit();
 		if(iCompilationUnit != null){
 			JdtAst jdtAst = new JdtAst();
@@ -181,8 +224,72 @@ public class ASTHandle {
 				// TODO Auto-generated catch block
 				e.printStackTrace();
 			}
-			return entity.entityExist();
+			return entity.getEntityExist();
 		}
 		return false;
+	}
+	/**
+	 * from IMethod(IJavaElement) convert to MethodDeclaration(AstNode)
+	 * then we can use visit
+	 * @param method
+	 * @return MethodDeclaration
+	 * version1_0
+	 */
+	private MethodDeclaration convertToAstNode(IMethod method)
+	{
+	    ICompilationUnit compilationUnit = method.getCompilationUnit();
+	   
+	    ASTParser astParser = ASTParser.newParser( AST.JLS3 );
+	    astParser.setResolveBindings( true );
+	    astParser.setKind( ASTParser.K_COMPILATION_UNIT );
+	    astParser.setBindingsRecovery( true );
+	    Map options = JavaCore.getOptions();
+	    astParser.setCompilerOptions(options);
+	    astParser.setSource( compilationUnit );
+	    ASTNode rootNode = astParser.createAST( null );
+	    CompilationUnit compilationUnitNode = (CompilationUnit) rootNode;
+	    String key = method.getKey();
+	    //System.out.println("key:\t"+key);
+	    ASTNode javaElement = compilationUnitNode.findDeclaringNode( key );
+
+	    MethodDeclaration methodDeclarationNode = (MethodDeclaration) javaElement;
+	    return methodDeclarationNode;
+	}
+	/**
+	 * from IMethod(IJavaElement) convert to MethodDeclaration(AstNode)
+	 * then we can use visit
+	 * @param method
+	 * @return MethodDeclaration
+	 * version2_0
+	 */
+	private MethodDeclaration astNode(final IMethod method)
+	{
+		final ICompilationUnit compilationUnit = method.getCompilationUnit();
+		//CompilationUnit root = SharedASTProvider.getAST(compilationUnit, SharedASTProvider.WAIT_NO, null);	//add test
+		final ASTParser astParser = ASTParser.newParser(AST.JLS3);
+		astParser.setSource(compilationUnit);
+		astParser.setKind(ASTParser.K_COMPILATION_UNIT);
+		astParser.setResolveBindings( true );
+		astParser.setBindingsRecovery( true );
+		//通过方法的起点和终点获取方法ASTNode
+		final ASTNode rootNode = astParser.createAST( null );
+		String unitSource = null;
+		String methodSource = null;
+		try {
+			unitSource = compilationUnit.getSource();
+			methodSource = method.getSource();
+			//NodeFinder.perform(rootNode, method.getSourceRange());
+		} catch (JavaModelException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		
+		final int start = unitSource.indexOf( methodSource );
+		final int end = methodSource.length();
+		final ASTNode currentNode = NodeFinder.perform( rootNode, start, end );
+		
+		MethodDeclaration methodDeclarationParent = (MethodDeclaration)currentNode;
+
+		return methodDeclarationParent;
 	}
 }

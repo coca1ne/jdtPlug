@@ -24,7 +24,7 @@ import org.eclipse.jdt.core.dom.CompilationUnit;
  */
 public class AntiPatternHandler extends AbstractHandler {
 
-	private static final String TESTCLASS_INIT = "FieldDefinitionImpl.java";
+	private static final String TESTCLASS_INIT = "CustomerPaymentImpl.java";
 	private static final boolean DEBUG_OPTION = true;//debug option
 	@Override
 	public Object execute(ExecutionEvent event) throws ExecutionException {

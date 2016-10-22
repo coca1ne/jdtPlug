@@ -32,54 +32,51 @@ public class CallerMethodVisitor extends ASTVisitor {
 	@Override
 	public boolean visit(EnhancedForStatement node) {
 		// find methods calees in for statement block
-		//CalleeMethodVisitor methodVisitor = new CalleeMethodVisitor(astHandle);
-		//node.accept(methodVisitor);
-		//if @Entity exist, caller will do
-		//if (methodVisitor.getEntityFlag()) {
-			ASTNode parentNode = astHandle.findParentMethod(node);
-			// find the for statement in which method
-			if (parentNode.getNodeType() == ASTNode.METHOD_DECLARATION) {
-				MethodDeclaration parentMethod = (MethodDeclaration) parentNode;
-				IMethodBinding methodBinding = parentMethod.resolveBinding();
-				if(methodBinding == null)
-					return true;
-				IMethod iMethod = (IMethod) methodBinding.getMethodDeclaration().getJavaElement();
-				// (IMethod)itypeBinding.getErasure().getJavaElement();
-				if (iMethod != null) {
-					HashSet<IMethod> callee = new HashSet<IMethod>();
-					HashSet<IMethod> caller = new HashSet<IMethod>();
-					HashSet<IMethod> methodinit = new HashSet<IMethod>();
-					methodinit.add(iMethod);
-					callee.add(iMethod);//需要添加forStatement方法，因为这个方法可能在entity类里面
-					try {
-						callee.addAll(astHandle.getCalleesOf(methodinit));
-						for (Iterator<IMethod> it = callee.iterator(); it.hasNext();) {
-							IMethod method = (IMethod)it.next();
-							EntityFlag = astHandle.entityMethod(method);
-							//EntityFlag = true;
-							if(EntityFlag){
-								System.out.println("forStatement:\t" + node.getExpression());
-								System.out.println("ForMethod:\t" + iMethod);
-								methodinit.add(iMethod);//methodinit已经空，需要重新添加for method
-								caller = astHandle.getCallersOf(methodinit);
-								break;
-							}
+
+		// if @Entity exist, caller will do
+		ASTNode parentNode = astHandle.findParentMethod(node);
+		// find the for statement in which method
+		if (parentNode.getNodeType() == ASTNode.METHOD_DECLARATION) {
+			MethodDeclaration parentMethod = (MethodDeclaration) parentNode;
+			IMethodBinding methodBinding = parentMethod.resolveBinding();
+			if (methodBinding == null)
+				return true;
+			IMethod iMethod = (IMethod) methodBinding.getMethodDeclaration().getJavaElement();
+			// (IMethod)itypeBinding.getErasure().getJavaElement();
+			if (iMethod != null) {
+				HashSet<IMethod> callee = new HashSet<IMethod>();
+				HashSet<IMethod> caller = new HashSet<IMethod>();
+				HashSet<IMethod> methodinit = new HashSet<IMethod>();
+				methodinit.add(iMethod);
+				callee.add(iMethod);// 需要添加forStatement方法，因为这个方法可能在entity类里面
+				try {
+					callee.addAll(astHandle.getCalleesOf(methodinit));
+					for (Iterator<IMethod> it = callee.iterator(); it.hasNext();) {
+						IMethod method = (IMethod) it.next();
+						EntityFlag = astHandle.DBMethod(method);
+						//EntityFlag = false;
+						if (EntityFlag) {
+							System.out.println("forStatement:\t" + node.getBody());
+							System.out.println("ForMethod:\t" + iMethod);
+							methodinit.add(iMethod);// methodinit已经空，需要重新添加for
+							caller = astHandle.getCallersOf(methodinit);
+							break;
 						}
-						if(EntityFlag){
-							for (Iterator it = caller.iterator(); it.hasNext();) {
-								System.out.println("Caller method:\t"+it.next());
-							}
-							for(Iterator it = callee.iterator();it.hasNext();){
-								System.out.println("Callee method\t"+it.next());
-							}
-						}
-					} catch (JavaModelException e) {
-						// TODO Auto-generated catch block
-						e.printStackTrace();
 					}
+					if (EntityFlag) {
+						for (Iterator it = caller.iterator(); it.hasNext();) {
+							System.out.println("Caller method:\t" + it.next());
+						}
+						for (Iterator it = callee.iterator(); it.hasNext();) {
+							System.out.println("Callee method\t" + it.next());
+						}
+					}
+				} catch (JavaModelException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
 				}
 			}
-		//}
+		}
 		return true;
 	}
 	
